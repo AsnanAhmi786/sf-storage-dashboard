@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SF Self-Storage Manifest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Archivo:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  :root{
+    --ink:#17181a;
+    --panel:#1f2124;
+    --panel-2:#26282c;
+    --steel:#3a3d42;
+    --line:#3a3d42;
+    --paper:#e9e6de;
+    --paper-dim:#a8a49a;
+    --safety:#f2622e;
+    --safety-dim:#c94f24;
+    --ok:#5fb488;
+    --radius:2px;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    background:var(--ink);
+    color:var(--paper);
+    font-family:'Archivo', sans-serif;
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+    overflow:hidden;
+  }
+
+  /* ---- Header: manifest strip ---- */
+  header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:14px 22px;
+    background:
+      repeating-linear-gradient(135deg, transparent 0 10px, rgba(255,255,255,0.02) 10px 20px),
+      var(--panel);
+    border-bottom:3px solid var(--safety);
+    flex-shrink:0;
+  }
+  .brand{display:flex; align-items:center; gap:12px;}
+  .brand .tag{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    letter-spacing:0.12em;
+    color:var(--ink);
+    background:var(--safety);
+    padding:3px 8px;
+    border-radius:var(--radius);
+    font-weight:700;
+  }
+  .brand h1{
+    font-size:18px;
+    margin:0;
+    letter-spacing:0.02em;
+    font-weight:800;
+    text-transform:uppercase;
+  }
+  .brand h1 span{color:var(--paper-dim); font-weight:500; text-transform:none; font-size:13px; display:block; letter-spacing:0;}
+
+  .stats{display:flex; gap:26px;}
+  .stat{text-align:right;}
+  .stat .n{font-family:'JetBrains Mono', monospace; font-size:22px; font-weight:700; line-height:1;}
+  .stat .l{font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--paper-dim); margin-top:3px;}
+
+  /* ---- Body layout ---- */
+  .layout{
+    flex:1;
+    display:flex;
+    min-height:0;
+  }
+
+  /* ---- Sidebar: bin manifest list ---- */
+  #sidebar{
+    width:380px;
+    flex-shrink:0;
+    background:var(--panel);
+    border-right:1px solid var(--line);
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  #search-row{
+    padding:14px;
+    border-bottom:1px solid var(--line);
+    flex-shrink:0;
+  }
+  #search-row input{
+    width:100%;
+    background:var(--ink);
+    border:1px solid var(--steel);
+    color:var(--paper);
+    padding:9px 10px;
+    font-family:'JetBrains Mono', monospace;
+    font-size:13px;
+    border-radius:var(--radius);
+  }
+  #search-row input:focus{outline:none; border-color:var(--safety);}
+  #search-row input::placeholder{color:var(--paper-dim);}
+
+  #list{
+    overflow-y:auto;
+    flex:1;
+  }
+  .card{
+    padding:14px 16px;
+    border-bottom:1px solid var(--line);
+    cursor:pointer;
+    display:flex;
+    gap:12px;
+    transition:background 0.12s ease;
+  }
+  .card:hover, .card.active{background:var(--panel-2);}
+  .card.active{border-left:3px solid var(--safety); padding-left:13px;}
+  .bin-tag{
+    font-family:'JetBrains Mono', monospace;
+    font-size:10px;
+    color:var(--ink);
+    background:var(--paper-dim);
+    border-radius:var(--radius);
+    padding:2px 5px;
+    height:fit-content;
+    white-space:nowrap;
+  }
+  .card-body{min-width:0;}
+  .card-body h3{
+    margin:0 0 4px;
+    font-size:14px;
+    font-weight:600;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .card-body .addr{
+    font-size:12px;
+    color:var(--paper-dim);
+    margin:0 0 6px;
+    line-height:1.4;
+  }
+  .meta-row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+  .brand-pill{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px;
+    color:var(--ink);
+    background:#d9b34a;
+    padding:1px 6px;
+    border-radius:var(--radius);
+    font-weight:700;
+  }
+  .no-brand{font-size:11px; color:var(--paper-dim); font-family:'JetBrains Mono', monospace;}
+  .status-dot{width:7px; height:7px; border-radius:50%; display:inline-block;}
+  .status-dot.has-hours{background:var(--ok);}
+  .status-dot.unknown{background:var(--steel);}
+  .status-label{font-size:11px; color:var(--paper-dim);}
+
+  /* ---- Map area ---- */
+  #map-wrap{flex:1; position:relative; min-width:0;}
+  #map{width:100%; height:100%; background:var(--ink);}
+  #map .leaflet-tile-pane{
+    filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9) saturate(0.8);
+  }
+
+  #empty-state, #loading-state{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:10px;
+    background:var(--ink);
+    text-align:center;
+    padding:20px;
+    z-index:1000;
+  }
+  #empty-state h2, #loading-state h2{font-size:15px; margin:0; font-weight:600;}
+  #empty-state p, #loading-state p{font-size:13px; color:var(--paper-dim); max-width:420px; margin:0; font-family:'JetBrains Mono', monospace; line-height:1.5;}
+
+  /* Leaflet popup overrides for our data-tag look */
+  .leaflet-popup-content-wrapper{
+    background:var(--panel) !important;
+    color:var(--paper) !important;
+    border-radius:var(--radius) !important;
+  }
+  .leaflet-popup-tip{background:var(--panel) !important;}
+  .popup-content h3{margin:0 0 6px; font-size:14px;}
+  .popup-content p{margin:0 0 4px; font-size:12px; color:var(--paper-dim); font-family:'JetBrains Mono', monospace;}
+  .popup-content a{color:var(--safety);}
+  .leaflet-control-attribution{
+    background:rgba(31,33,36,0.85) !important;
+    color:var(--paper-dim) !important;
+  }
+  .leaflet-control-attribution a{color:var(--paper) !important;}
+  .leaflet-control-zoom a{
+    background:var(--panel) !important;
+    color:var(--paper) !important;
+    border-color:var(--steel) !important;
+  }
+
+  .storage-marker{
+    width:16px; height:16px;
+    background:var(--safety);
+    border:2px solid var(--ink);
+    border-radius:50%;
+    box-shadow:0 0 0 1px var(--safety);
+  }
+  .storage-marker.active-marker{
+    background:#ffb84d;
+    transform:scale(1.3);
+  }
+
+  ::-webkit-scrollbar{width:8px;}
+  ::-webkit-scrollbar-track{background:var(--panel);}
+  ::-webkit-scrollbar-thumb{background:var(--steel); border-radius:4px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="tag">SF &middot; 94103</div>
+    <h1>Self-Storage Manifest<span>Local dashboard &mdash; OpenStreetMap + Leaflet</span></h1>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="n" id="stat-count">&mdash;</div><div class="l">Units Found</div></div>
+    <div class="stat"><div class="n" id="stat-brand">&mdash;</div><div class="l">Named Brand</div></div>
+    <div class="stat"><div class="n" id="stat-hours">&mdash;</div><div class="l">Hours Listed</div></div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside id="sidebar">
+    <div id="search-row">
+      <input type="text" id="search-input" placeholder="filter by name or address..." />
+    </div>
+    <div id="list"></div>
+  </aside>
+
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div id="loading-state">
+      <h2>Loading manifest&hellip;</h2>
+      <p>Reading data/storage_units.json</p>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  let map;
+  let markers = [];
+  let facilities = [];
+  let markerLayer;
+
+  const SF_CENTER = [37.7749, -122.4194];
+
+  function initMap() {
+    map = L.map("map", {
+      zoomControl: true,
+    }).setView(SF_CENTER, 12);
+
+    // Plain OpenStreetMap tiles (always free, no key) with a CSS filter
+    // applied via #map .leaflet-tile-pane above to fake a dark theme.
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    markerLayer = L.layerGroup().addTo(map);
+    loadData();
+  }
+
+  async function loadData() {
+    try {
+      const res = await fetch("data/storage_units.json");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      facilities = await res.json();
+    } catch (err) {
+      document.getElementById("loading-state").innerHTML =
+        '<h2>Couldn\'t load data</h2><p>Run fetch_data.py first to generate data/storage_units.json, then refresh.<br><br>' + err.message + '</p>';
+      return;
+    }
+
+    document.getElementById("loading-state").style.display = "none";
+    renderStats();
+    renderList(facilities);
+    renderMarkers(facilities);
+  }
+
+  function renderStats() {
+    document.getElementById("stat-count").textContent = facilities.length;
+    const branded = facilities.filter(f => f.brand).length;
+    document.getElementById("stat-brand").textContent = branded;
+    const withHours = facilities.filter(f => f.opening_hours).length;
+    document.getElementById("stat-hours").textContent = withHours;
+  }
+
+  function hoursDot(f) {
+    if (f.opening_hours) return `<span class="status-dot has-hours"></span><span class="status-label">${f.opening_hours}</span>`;
+    return '<span class="status-dot unknown"></span><span class="status-label">Hours unknown</span>';
+  }
+
+  function renderList(items) {
+    const list = document.getElementById("list");
+    list.innerHTML = "";
+    items.forEach((f, idx) => {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.dataset.id = f.place_id;
+      const binNum = String(idx + 1).padStart(3, "0");
+      card.innerHTML = `
+        <div class="bin-tag">BIN-${binNum}</div>
+        <div class="card-body">
+          <h3>${f.name || "Unnamed facility"}</h3>
+          <p class="addr">${f.address || "Address unavailable"}</p>
+          <div class="meta-row">
+            ${f.brand ? `<span class="brand-pill">${f.brand}</span>` : `<span class="no-brand">independent</span>`}
+          </div>
+        </div>
+      `;
+      card.addEventListener("click", () => focusFacility(f.place_id));
+      list.appendChild(card);
+    });
+  }
+
+  function renderMarkers(items) {
+    markerLayer.clearLayers();
+    markers = [];
+
+    items.forEach(f => {
+      if (typeof f.lat !== "number" || typeof f.lng !== "number") return;
+
+      const icon = L.divIcon({
+        className: "",
+        html: '<div class="storage-marker" data-id="' + f.place_id + '"></div>',
+        iconSize: [16, 16],
+      });
+
+      const marker = L.marker([f.lat, f.lng], { icon }).addTo(markerLayer);
+      marker.placeId = f.place_id;
+
+      const content = `
+        <div class="popup-content">
+          <h3>${f.name || "Unnamed facility"}</h3>
+          <p>${f.address || ""}</p>
+          ${f.phone ? `<p>${f.phone}</p>` : ""}
+          ${f.opening_hours ? `<p>${f.opening_hours}</p>` : ""}
+          ${f.website ? `<p><a href="${f.website}" target="_blank">Visit website &rarr;</a></p>` : ""}
+        </div>
+      `;
+      marker.bindPopup(content);
+      marker.on("click", () => focusFacility(f.place_id, false));
+
+      markers.push(marker);
+    });
+  }
+
+  function focusFacility(placeId, flyTo = true) {
+    const f = facilities.find(x => x.place_id === placeId);
+    if (!f) return;
+
+    document.querySelectorAll(".card").forEach(c => c.classList.toggle("active", c.dataset.id === placeId));
+    const activeCard = document.querySelector(`.card[data-id="${placeId}"]`);
+    if (activeCard) activeCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
+
+    document.querySelectorAll(".storage-marker").forEach(el => {
+      el.classList.toggle("active-marker", el.dataset.id === placeId);
+    });
+
+    if (typeof f.lat === "number" && typeof f.lng === "number") {
+      if (flyTo) map.flyTo([f.lat, f.lng], 15, { duration: 0.6 });
+      const marker = markers.find(m => m.placeId === placeId);
+      if (marker) marker.openPopup();
+    }
+  }
+
+  document.getElementById("search-input").addEventListener("input", (e) => {
+    const q = e.target.value.toLowerCase();
+    const filtered = facilities.filter(f =>
+      (f.name || "").toLowerCase().includes(q) ||
+      (f.address || "").toLowerCase().includes(q)
+    );
+    renderList(filtered);
+    renderMarkers(filtered);
+  });
+
+  initMap();
+</script>
+</body>
+</html>

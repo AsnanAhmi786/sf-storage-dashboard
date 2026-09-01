@@ -1,0 +1,7 @@
+﻿.env
+config.js
+pins.db
+__pycache__/
+*.pyc
+.DS_Store
+venv/

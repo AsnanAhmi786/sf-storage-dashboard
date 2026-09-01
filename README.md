@@ -1,23 +1,20 @@
 # SF Self-Storage Manifest
 
 A local dashboard that scrapes self-storage facility data in San Francisco
-using OpenStreetMap's Overpass API, then displays it on an interactive
-Leaflet map. **No API keys, accounts, or billing required anywhere.**
-
-> Note: this project originally targeted the Google Places/Maps APIs per the
-> assignment brief, but switched to OpenStreetMap + Leaflet after Google Cloud
-> billing verification and Yelp's signup flow were both unavailable. The data
-> source can be swapped back to Google later — see "Swapping back to Google
-> Maps" below.
+using Geoapify's Places API, displays it on an interactive Leaflet map, and
+lets you pin custom locations that are saved permanently in a local SQLite
+database.
 
 ## Project structure
 
 ```
 sf-storage-dashboard/
-├── fetch_data.py          # Scrapes storage facilities via OSM Overpass API
+├── app.py                  # Flask server: serves the dashboard + pin API (SQLite)
+├── fetch_data.py            # Scrapes storage facilities via Geoapify Places API
 ├── data/
-│   └── storage_units.json    # Generated output (created after running fetch_data.py)
-├── index.html              # The dashboard (Leaflet map + sidebar list)
+│   └── storage_units.json      # Generated output (created after running fetch_data.py)
+├── index.html                # The dashboard (Leaflet map + sidebar list + pin mode)
+├── pins.db                   # SQLite database of your pinned locations (auto-created, gitignored)
 ├── requirements.txt
 └── README.md
 ```
@@ -30,53 +27,52 @@ sf-storage-dashboard/
 pip install -r requirements.txt
 ```
 
-### 2. Run the scraper
+### 2. Get a free Geoapify API key
+
+Sign up at https://myprojects.geoapify.com/ (email only, no billing card),
+create a project, and copy the API key it generates.
+
+### 3. Set your API key and run the scraper
 
 ```bash
+$env:GEOAPIFY_API_KEY="your_key_here"   # PowerShell
 python fetch_data.py
 ```
 
-This queries the Overpass API for anything tagged `shop=storage_rental` or
-named like "storage" within San Francisco's bounding box, and writes the
-results to `data/storage_units.json`. No key or signup needed — Overpass is
-a public endpoint.
+This writes the results to `data/storage_units.json`.
 
-### 3. Serve and open the dashboard
-
-Because the page fetches a local JSON file, you need to serve it over HTTP
-(opening `index.html` directly via `file://` will be blocked by the browser).
-From the project folder, run:
+### 4. Start the server
 
 ```bash
-python -m http.server 8000
+python app.py
 ```
 
-Then open **http://localhost:8000** in your browser.
+This replaces the old `python -m http.server` command — `app.py` now
+serves the dashboard **and** the pin database API. Then open
+**http://localhost:8000**.
+
+## Pinning locations
+
+Click the **"📍 Pin Mode"** button in the top-right of the map to turn it on,
+then click anywhere on the map to drop a pin with a label and optional note.
+Pins are saved permanently to `pins.db` (a local SQLite file) via a small
+Flask REST API (`/api/pins`), so they persist across restarts and page
+refreshes. Click a pin's marker to view its details or delete it.
 
 ## How the data is sourced
 
-- **Map tiles**: CartoDB's free "Dark Matter" tiles (built on OpenStreetMap
-  data), no key required.
-- **Facility data**: OpenStreetMap, queried via the public Overpass API.
-  Coverage is community-sourced, so it may be less complete than Google's
-  or Yelp's business listings, especially for phone numbers/hours.
+- **Map tiles**: plain OpenStreetMap tiles (free, no key), with a CSS filter
+  applied to fake a dark theme.
+- **Facility data**: Geoapify Places API (free tier, 3,000 requests/day),
+  which itself sources from OpenStreetMap. This is a **snapshot**, not
+  live/real-time — re-run `fetch_data.py` periodically to refresh it.
+- **Pinned locations**: stored locally in SQLite via the Flask backend in
+  `app.py`. This part *is* live and persists automatically.
 - **Map library**: [Leaflet.js](https://leafletjs.com/), loaded from a CDN.
-
-## Swapping back to Google Maps later
-
-If your Google Cloud billing clears up, swapping back is straightforward:
-
-1. Restore a Places API-based `fetch_data.py` (Text Search + Place Details)
-   to get richer data (ratings, review counts, business hours, phone).
-2. Replace the Leaflet `L.map`/`L.tileLayer`/`L.marker` calls in `index.html`
-   with the Google Maps JavaScript API equivalents (`google.maps.Map`,
-   `google.maps.Marker`).
-3. The `data/storage_units.json` schema is intentionally similar between
-   both approaches, so most of the sidebar/list rendering code won't need
-   to change.
 
 ## Notes
 
-- Re-run `fetch_data.py` any time to refresh the data.
-- Overpass's public instance is a shared community resource — please don't
-  hammer it with rapid repeated requests.
+- `pins.db` is gitignored — your pinned locations stay local to your machine
+  and won't be pushed to GitHub. If you want to share pins across machines,
+  the database would need to move to a hosted service instead of a local file.
+- Re-run `fetch_data.py` any time to refresh the storage facility data.
